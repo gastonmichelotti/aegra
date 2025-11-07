@@ -3,6 +3,7 @@
 import importlib.util
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any, TypeVar
 from uuid import uuid5
@@ -192,14 +193,46 @@ class LangGraphService:
         if not file_path.exists():
             raise ValueError(f"Graph file not found: {file_path}")
 
+        # Resolve file_path to absolute path
+        file_path_absolute = file_path.resolve()
+        
+        # Ensure project root is in sys.path for relative imports to work
+        project_root = file_path_absolute.parent.parent.parent
+        if str(project_root) not in sys.path:
+            sys.path.insert(0, str(project_root))
+
         # Dynamic import of graph module
+        # Build the full module path including the file name
+        # For "./graphs/soporte_ods/graph.py", this creates "graphs.soporte_ods.graph"
+        relative_path = file_path_absolute.relative_to(project_root).with_suffix("")
+        module_name = str(relative_path).replace("/", ".")
+        
+        # Ensure all parent packages exist in sys.modules for relative imports
+        import types
+        parts = module_name.split(".")
+        for i in range(1, len(parts)):
+            parent_package = ".".join(parts[:i])
+            if parent_package not in sys.modules:
+                parent_module = types.ModuleType(parent_package)
+                # Make it a proper package by setting __path__
+                parent_path = project_root / parent_package.replace(".", "/")
+                parent_module.__path__ = [str(parent_path)]
+                parent_module.__file__ = str(parent_path / "__init__.py")
+                sys.modules[parent_package] = parent_module
+        
         spec = importlib.util.spec_from_file_location(
-            f"graphs.{graph_id}", str(file_path.resolve())
+            module_name, str(file_path_absolute)
         )
         if spec is None or spec.loader is None:
             raise ValueError(f"Failed to load graph module: {file_path}")
 
         module = importlib.util.module_from_spec(spec)
+        # Set module attributes BEFORE executing to help with relative imports
+        module.__name__ = module_name
+        module.__package__ = ".".join(module_name.split(".")[:-1])  # All but the last part
+        # Register the module in sys.modules BEFORE execution so relative imports work
+        sys.modules[module_name] = module
+        # Now execute the module
         spec.loader.exec_module(module)
 
         # Get the exported graph

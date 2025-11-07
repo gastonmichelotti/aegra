@@ -14,7 +14,7 @@ load_dotenv()
 
 from langchain_chroma import Chroma
 from langchain_openai.embeddings import OpenAIEmbeddings
-from langchain.text_splitter import MarkdownHeaderTextSplitter
+from langchain_text_splitters import MarkdownHeaderTextSplitter
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
 import chromadb

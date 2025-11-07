@@ -33,6 +33,7 @@ dependencies = [
     "greenlet>=3.2.3",
     "langchain-chroma>=0.1.0",
     "langchain-openai>=0.3.28",
+    "langchain-text-splitters>=0.3.0",
     "langgraph>=0.6.0",
     "langchain>=0.3.0",
     "langgraph-checkpoint-postgres>=2.0.23",
