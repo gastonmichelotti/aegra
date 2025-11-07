@@ -54,7 +54,15 @@ async def create_thread(
 ):
     """Create a new conversation thread"""
 
-    thread_id = str(uuid4())
+    # Use custom thread_id if provided, otherwise generate one
+    thread_id = request.thread_id if request.thread_id else str(uuid4())
+
+    # Validate that thread_id doesn't already exist if custom ID was provided
+    if request.thread_id:
+        existing_stmt = select(ThreadORM).where(ThreadORM.thread_id == thread_id)
+        existing = await session.scalar(existing_stmt)
+        if existing:
+            raise HTTPException(409, f"Thread with id '{thread_id}' already exists")
 
     # Build metadata with required fields
     metadata = request.metadata or {}

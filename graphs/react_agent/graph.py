@@ -7,12 +7,11 @@ from datetime import UTC, datetime
 from typing import Literal, cast
 
 from langchain_core.messages import AIMessage
-from langgraph.graph import StateGraph
+from langgraph.graph import StateGraph, MessagesState
 from langgraph.prebuilt import ToolNode
 from langgraph.runtime import Runtime
 
 from react_agent.context import Context
-from react_agent.state import InputState, State
 from react_agent.tools import TOOLS
 from react_agent.utils import load_chat_model
 
@@ -20,7 +19,7 @@ from react_agent.utils import load_chat_model
 
 
 async def call_model(
-    state: State, runtime: Runtime[Context]
+    state: MessagesState, runtime: Runtime[Context]
 ) -> dict[str, list[AIMessage]]:
     """Call the LLM powering our "agent".
 

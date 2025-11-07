@@ -120,6 +120,69 @@ async def _validate_resume_command(
             )
 
 
+async def _handle_multitask_strategy(
+    session: AsyncSession, thread_id: str, multitask_strategy: str | None
+) -> None:
+    """Handle multitask strategy for concurrent runs.
+
+    Args:
+        session: Database session
+        thread_id: Thread ID to check for active runs
+        multitask_strategy: Strategy to use ('reject', 'interrupt', 'enqueue', or None)
+
+    Raises:
+        HTTPException: If strategy is 'reject' and there's an active run
+    """
+    if not multitask_strategy:
+        return
+
+    # Check for active runs on this thread
+    active_runs_stmt = select(RunORM).where(
+        RunORM.thread_id == thread_id,
+        RunORM.status.in_(["pending", "running", "streaming"])
+    )
+    active_run = await session.scalar(active_runs_stmt)
+
+    if not active_run:
+        # No active run, nothing to do
+        return
+
+    # Handle strategy
+    if multitask_strategy == "reject":
+        raise HTTPException(
+            409,
+            f"Thread '{thread_id}' has an active run (run_id: {active_run.run_id}). "
+            "Cannot create new run with multitask_strategy='reject'."
+        )
+    elif multitask_strategy == "interrupt":
+        # Interrupt the active run
+        logger.info(
+            f"Interrupting active run {active_run.run_id} on thread {thread_id} "
+            f"due to multitask_strategy='interrupt'"
+        )
+        await streaming_service.interrupt_run(active_run.run_id)
+
+        # Cancel background task if exists
+        task = active_runs.pop(active_run.run_id, None)
+        if task and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.warning(f"Error canceling task for run {active_run.run_id}: {e}")
+    elif multitask_strategy == "enqueue":
+        # TODO: Implement enqueue strategy (queue the run to execute after active one finishes)
+        logger.warning(
+            f"multitask_strategy='enqueue' not yet implemented, proceeding anyway"
+        )
+    else:
+        logger.warning(
+            f"Unknown multitask_strategy '{multitask_strategy}', ignoring"
+        )
+
+
 @router.post("/threads/{thread_id}/runs", response_model=Run)
 async def create_run(
     thread_id: str,
@@ -182,6 +245,9 @@ async def create_run(
         raise HTTPException(
             404, f"Graph '{assistant.graph_id}' not found for assistant"
         )
+
+    # Handle multitask strategy before creating run
+    await _handle_multitask_strategy(session, thread_id, request.multitask_strategy)
 
     # Mark thread as busy and update metadata with assistant/graph info
     await set_thread_status(session, thread_id, "busy")
@@ -312,6 +378,9 @@ async def create_and_stream_run(
         raise HTTPException(
             404, f"Graph '{assistant.graph_id}' not found for assistant"
         )
+
+    # Handle multitask strategy before creating run
+    await _handle_multitask_strategy(session, thread_id, request.multitask_strategy)
 
     # Mark thread as busy and update metadata with assistant/graph info
     await set_thread_status(session, thread_id, "busy")
@@ -639,6 +708,9 @@ async def wait_for_run(
             404, f"Graph '{assistant.graph_id}' not found for assistant"
         )
 
+    # Handle multitask strategy before creating run
+    await _handle_multitask_strategy(session, thread_id, request.multitask_strategy)
+
     # Mark thread as busy and update metadata with assistant/graph info
     await set_thread_status(session, thread_id, "busy")
     await update_thread_metadata(
@@ -925,8 +997,35 @@ async def execute_run_async(
         langgraph_service = get_langgraph_service()
         graph = await langgraph_service.get_graph(graph_id)
 
+        # Fetch thread and assistant to merge their metadata into config
+        thread_stmt = select(ThreadORM).where(ThreadORM.thread_id == thread_id)
+        thread = await session.scalar(thread_stmt)
+
+        # Merge thread metadata into config if thread exists
+        merged_config = (config or {}).copy()
+        if thread and thread.metadata_json:
+            merged_config.setdefault("configurable", {})
+            # Merge thread metadata into configurable (don't overwrite existing keys)
+            for key, value in thread.metadata_json.items():
+                merged_config["configurable"].setdefault(key, value)
+
+        # Also merge assistant metadata if available
+        # Find assistant by looking up the run record or querying by graph_id
+        run_stmt = select(RunORM).where(RunORM.run_id == run_id)
+        run_record = await session.scalar(run_stmt)
+        if run_record and run_record.assistant_id:
+            assistant_stmt = select(AssistantORM).where(
+                AssistantORM.assistant_id == run_record.assistant_id
+            )
+            assistant = await session.scalar(assistant_stmt)
+            if assistant and assistant.metadata_dict:
+                merged_config.setdefault("configurable", {})
+                # Merge assistant metadata (thread metadata takes precedence)
+                for key, value in assistant.metadata_dict.items():
+                    merged_config["configurable"].setdefault(key, value)
+
         run_config = create_run_config(
-            run_id, thread_id, user, config or {}, checkpoint
+            run_id, thread_id, user, merged_config, checkpoint
         )
 
         # Handle human-in-the-loop fields

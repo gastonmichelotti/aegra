@@ -38,10 +38,20 @@ services:
       - ./auth.py:/app/auth.py:ro
       - ./.env:/app/.env:ro
       - ./alembic:/app/alembic:ro # for migrations
+      - ./scripts:/app/scripts:ro # for migration scripts
+      # ChromaDB vector databases - using named volume for persistence
+      - chromadb_data:/app/RAG_resources:rw
     command: >
       sh -c "
         echo 'Running database migrations...' &&
         alembic upgrade head &&
+        echo 'Checking ChromaDB vector databases...' &&
+        if [ ! -d /app/RAG_resources/vector_databases/chroma_db_Instructivo_General ]; then
+          echo 'ChromaDB databases not found. Running migration...' &&
+          python3 scripts/migrate_instructivos_to_chromadb.py || echo 'Warning: ChromaDB migration failed or no instructivos found'
+        else
+          echo 'ChromaDB databases already exist. Skipping migration.'
+        fi &&
         echo 'Starting Aegra server...' &&
         uvicorn src.agent_server.main:app --host 0.0.0.0 --port $${PORT:-8000} --reload
       "
@@ -59,3 +69,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  chromadb_data:  # ChromaDB vector databases persistence

@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 class ThreadCreate(BaseModel):
     """Request model for creating threads"""
 
+    thread_id: str | None = Field(None, description="Custom thread ID (optional)")
     metadata: dict[str, Any] | None = Field(None, description="Thread metadata")
     initial_state: dict[str, Any] | None = Field(
         None, description="LangGraph initial state"

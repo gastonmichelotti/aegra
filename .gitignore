@@ -27,3 +27,8 @@ htmlcov/
 
 # Pre-commit
 .pre-commit-cache/
+
+# ChromaDB vector databases (contain binary data and embeddings)
+RAG_resources/vector_databases/
+chroma/
+*.sqlite3
