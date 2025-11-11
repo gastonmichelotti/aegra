@@ -95,34 +95,41 @@ POST /assistants
 }
 ```
 
-### 2. Crear Thread con Motoboy ID
+### 2. Crear Thread (opcional)
 
 ```bash
 POST /threads
 {
-    "thread_id": "motoboy_12345_session_1699999999",
-    "metadata": {
-        "motoboy_id": 12345
-    }
+    "thread_id": "motoboy_12345_session_1699999999"
 }
 ```
 
-**Nota**: El `motoboy_id` se define UNA VEZ en el thread metadata y fluye automáticamente a todos los runs.
-
-### 3. Crear Run
+### 3. Crear Run con Motoboy ID en Input
 
 ```bash
 POST /threads/{thread_id}/runs
 {
     "assistant_id": "asst_xxx",
     "input": {
+        "motoboy_id": 12345,  # ← Pass ONCE at initialization
         "messages": [
             {"role": "user", "content": "¿Cuál es mi viaje actual?"}
         ]
     },
+    "context": {
+        "mode": 2,  # Optional: defaults to 1 (production)
+        "model": "openai/gpt-4-turbo",
+        "temperature": 0.3
+    },
     "multitask_strategy": "interrupt"
 }
 ```
+
+**Notas importantes**:
+- El `motoboy_id` se pasa **UNA SOLA VEZ** en el `input` del primer run
+- Se persiste automáticamente en el state (PostgreSQL checkpoints)
+- No es necesario pasarlo en mensajes subsecuentes de la conversación
+- El `context` solo contiene configuración que puede variar (mode, model, etc.)
 
 ## Context Refresh
 

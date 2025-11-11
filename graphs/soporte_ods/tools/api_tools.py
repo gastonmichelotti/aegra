@@ -12,8 +12,8 @@ logger = logging.getLogger(__name__)
 async def gestionar_estado_viaje(
     accion: str,
     id_viaje: int,
+    state: InjectedState,
     motivo: str = "",
-    state: InjectedState = None,
 ) -> str:
     """Gestionar el estado de un viaje (liberar, cancelar, marcar como no entregado)
 

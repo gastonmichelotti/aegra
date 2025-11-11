@@ -18,6 +18,7 @@ class SoporteContext:
     - context_refresh_minutes: How often to refresh pre-computed context
     - enable_observer: Whether to run the observer node for long-term memory
 
+    Note: motoboy_id is now in the State, not in Context. Pass it in the input once.
     The context automatically loads MODE-specific configuration via mode_config property.
     """
 

@@ -28,9 +28,14 @@ async def observer_node(state: SoporteState, runtime: Runtime[SoporteContext]) -
         Dict with state updates (resets should_observe flag)
     """
     try:
+        # Get motoboy_id from state
+        motoboy_id = state.motoboy_id
+        if not motoboy_id:
+            logger.warning("observer_node: motoboy_id not found in state, skipping")
+            return {"should_observe": False}
+
+        # Get runtime context for settings
         ctx = runtime.context
-        config = runtime.config
-        motoboy_id = config["configurable"]["motoboy_id"]
 
         # Skip if observer is disabled or conversation is too short
         if not ctx.enable_observer or len(state.messages) < 4:

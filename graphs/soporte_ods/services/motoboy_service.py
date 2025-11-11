@@ -4,6 +4,7 @@ import random
 import logging
 from typing import Dict, Any, Optional
 
+from src.agent_server.core.database import db_manager
 from ..models.motoboy import MotoboyModel
 from ..config.mode_config import get_mode_config
 
@@ -49,45 +50,53 @@ class MotoboyService:
 
         # MODE 1 & 2: Query database
         try:
-            # TODO: Implement actual database query using Aegra's database manager
-            # For now, return error to indicate implementation needed
-            logger.warning(
-                f"Database query not yet implemented for mode {mode}. "
-                f"Using mock data temporarily."
+            db_url = mode_config.get("db_url")
+
+            if not db_url:
+                logger.error(f"db_url not configured for mode {mode}")
+                return {
+                    "success": False,
+                    "data": None,
+                    "error": "Database URL not configured",
+                    "message": f"Database URL no está configurada para mode {mode}"
+                }
+
+            # Execute stored procedure to get motoboy info
+            result = await MotoboyService._execute_db_query(db_url, id_motoboy)
+
+            if not result:
+                return {
+                    "success": False,
+                    "data": None,
+                    "error": "Motoboy no encontrado",
+                    "message": f"No se encontró motoboy con ID {id_motoboy}"
+                }
+
+            # Map database result to MotoboyModel
+            motoboy = MotoboyModel(
+                id_motoboy=result.get("id_motoboy", id_motoboy),
+                nombre_completo=result.get("nombre_completo"),
+                id_vehiculo=result.get("id_vehiculo"),
+                nombre_vehiculo=result.get("nombre_vehiculo"),
+                id_condicion_iva=result.get("id_condicion_iva"),
+                nombre_condicion_iva=result.get("nombre_condicion_iva"),
+                cuit=result.get("cuit"),
+                cbu=result.get("cbu"),
+                latitud_motoboy=result.get("latitud_motoboy"),
+                longitud_motoboy=result.get("longitud_motoboy"),
+                modalidad_rapiboy=result.get("modalidad_rapiboy"),
+                message="Motoboy encontrado correctamente"
             )
+
             return {
                 "success": True,
-                "data": MotoboyService._generate_mock_motoboy(id_motoboy),
+                "data": motoboy,
                 "error": None,
-                "message": "Motoboy encontrado (temporary mock - DB implementation pending)"
+                "message": "Motoboy encontrado correctamente"
             }
 
-            # Future implementation:
-            # db_url = mode_config["db_url"]
-            # query = f"EXEC sp_ChatBotODs_GetMotoboyInfo_By_Id @IdMotoboy = {id_motoboy}"
-            # result = await execute_db_query(db_url, query)
-            #
-            # if not result:
-            #     return {
-            #         "success": False,
-            #         "data": None,
-            #         "error": "Motoboy no encontrado",
-            #         "message": f"No se encontró motoboy con ID {id_motoboy}"
-            #     }
-            #
-            # return {
-            #     "success": True,
-            #     "data": MotoboyModel(
-            #         id_motoboy=result["id_motoboy"],
-            #         nombre_completo=result["nombre_completo"],
-            #         # ... map all fields
-            #     ),
-            #     "error": None,
-            #     "message": "Motoboy encontrado correctamente"
-            # }
-
         except Exception as e:
-            logger.error(f"Error obteniendo motoboy {id_motoboy}: {e}")
+            logger.error(f"Error obteniendo motoboy {id_motoboy}: {e}", exc_info=True)
             return {
                 "success": False,
                 "data": None,
@@ -96,8 +105,34 @@ class MotoboyService:
             }
 
     @staticmethod
+    async def _execute_db_query(db_url: str, id_motoboy: int) -> Optional[Dict[str, Any]]:
+        """Execute database query to get motoboy information using DatabaseManager
+
+        Args:
+            db_url: Database connection URL
+            id_motoboy: Motoboy ID to query
+
+        Returns:
+            Dict with motoboy data or None if not found
+
+        Raises:
+            Exception: If database query fails
+        """
+        query = "EXEC sp_ChatBotODs_GetMotoboyInfo_By_Id @IdMotoboy = :id_motoboy"
+
+        # DatabaseManager handles engine creation/disposal and error logging automatically
+        return await db_manager.execute_external_query(
+            db_url=db_url,
+            query=query,
+            params={"id_motoboy": id_motoboy}
+        )
+
+    @staticmethod
     def _generate_mock_motoboy(id_motoboy: int) -> MotoboyModel:
         """Generate deterministic mock motoboy for testing
+
+        Uses id_motoboy as random seed to ensure deterministic results.
+        Same ID will always generate the same mock data.
 
         Args:
             id_motoboy: Motoboy ID (used as seed for determinism)
@@ -107,10 +142,18 @@ class MotoboyService:
         """
         random.seed(id_motoboy)
 
+        # Generate deterministic random values
         id_vehiculo = random.choice([1, 4])
         condicion_iva = random.choice([0, 1, 2])
-        latitud = random.uniform(-34.7056, -34.5265)
+        latitud = random.uniform(-34.7056, -34.5265)  # Buenos Aires area
         longitud = random.uniform(-58.5315, -58.3314)
+
+        # Map condicion_iva to name
+        condicion_iva_map = {
+            0: "NN",
+            1: "Monotributista",
+            2: "Responsable Inscripto"
+        }
 
         return MotoboyModel(
             id_motoboy=id_motoboy,
@@ -118,11 +161,7 @@ class MotoboyService:
             id_vehiculo=id_vehiculo,
             nombre_vehiculo="Moto" if id_vehiculo == 1 else "Bici",
             id_condicion_iva=condicion_iva,
-            nombre_condicion_iva=(
-                "NN" if condicion_iva == 0
-                else "Monotributista" if condicion_iva == 1
-                else "Responsable Inscripto"
-            ),
+            nombre_condicion_iva=condicion_iva_map[condicion_iva],
             cuit="12345678901",
             cbu="1234567890123456789012",
             latitud_motoboy=latitud,

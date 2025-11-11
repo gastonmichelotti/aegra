@@ -3,8 +3,9 @@
 import random
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
+from src.agent_server.core.database import db_manager
 from ..models.reserva import ReservaModel
 from ..config.mode_config import get_mode_config
 
@@ -59,20 +60,61 @@ class ReservaService:
 
         # MODE 1 & 2: Query database
         try:
-            # TODO: Implement database query
-            logger.warning(
-                f"Database query not yet implemented for mode {mode}. "
-                f"Using mock data temporarily."
+            db_url = mode_config.get("db_url")
+
+            if not db_url:
+                logger.error(f"db_url not configured for mode {mode}")
+                return {
+                    "success": False,
+                    "data": None,
+                    "error": "Database URL not configured",
+                    "message": f"Database URL no está configurada para mode {mode}"
+                }
+
+            # Execute stored procedure to get reserva info
+            result = await ReservaService._execute_db_query(db_url, id_motoboy)
+
+            if not result:
+                return {
+                    "success": False,
+                    "data": None,
+                    "error": "Reserva no encontrada",
+                    "message": f"No se encontró reserva activa para motoboy {id_motoboy}"
+                }
+
+            # Map database result to ReservaModel
+            reserva = ReservaModel(
+                id_reserva=result.get("id_reserva"),
+                fecha_desde=result.get("fecha_desde"),
+                fecha_hasta=result.get("fecha_hasta"),
+                fecha_llego=result.get("fecha_llego"),
+                id_vehiculo=result.get("id_vehiculo"),
+                nombre_vehiculo=result.get("nombre_vehiculo"),
+                tiene_autoaceptacion=result.get("tiene_autoaceptacion"),
+                repartidor_disponible=result.get("repartidor_disponible"),
+                cantidad_viajes_entregados=result.get("cantidad_viajes_entregados"),
+                cantidad_rechazos=result.get("cantidad_rechazos"),
+                cantidad_rechazos_maxima=result.get("cantidad_rechazos_maxima"),
+                cantidad_viajes_minimo_asegurado=result.get("cantidad_viajes_minimo_asegurado"),
+                cumple_condicion_minimo_viajes=result.get("cumple_condicion_minimo_viajes"),
+                cumple_condicion_cantidad_rechazos=result.get("cumple_condicion_cantidad_rechazos"),
+                cumple_condicion_puntualidad=result.get("cumple_condicion_puntualidad"),
+                minutos_no_disponible=result.get("minutos_no_disponible"),
+                cantidad_maxima_minutos_no_conectado=result.get("cantidad_maxima_minutos_no_conectado"),
+                cumple_condicion_conexion=result.get("cumple_condicion_conexion"),
+                ganancia_minima_asegurada_correspondiente=result.get("ganancia_minima_asegurada_correspondiente"),
+                message="Reserva encontrada correctamente"
             )
+
             return {
                 "success": True,
-                "data": ReservaService._generate_mock_reserva(id_motoboy),
+                "data": reserva,
                 "error": None,
-                "message": "Reserva encontrada (temporary mock - DB implementation pending)"
+                "message": "Reserva encontrada correctamente"
             }
 
         except Exception as e:
-            logger.error(f"Error obteniendo reserva para motoboy {id_motoboy}: {e}")
+            logger.error(f"Error obteniendo reserva para motoboy {id_motoboy}: {e}", exc_info=True)
             return {
                 "success": False,
                 "data": None,
@@ -81,8 +123,41 @@ class ReservaService:
             }
 
     @staticmethod
+    async def _execute_db_query(db_url: str, id_motoboy: int) -> Optional[Dict[str, Any]]:
+        """Execute database query to get reserva information using DatabaseManager
+
+        Args:
+            db_url: Database connection URL
+            id_motoboy: Motoboy ID to query
+
+        Returns:
+            Dict with reserva data or None if not found
+
+        Raises:
+            Exception: If database query fails
+        """
+        query = "EXEC sp_ChatBotODs_GetReservaActiva_By_IdMotoboy @IdMotoboy = :id_motoboy"
+
+        # DatabaseManager handles engine creation/disposal and error logging automatically
+        return await db_manager.execute_external_query(
+            db_url=db_url,
+            query=query,
+            params={"id_motoboy": id_motoboy}
+        )
+
+    @staticmethod
     def _generate_mock_reserva(id_motoboy: int) -> ReservaModel:
-        """Generate deterministic mock reserva for testing"""
+        """Generate deterministic mock reserva for testing
+
+        Uses id_motoboy as random seed to ensure deterministic results.
+        Same ID will always generate the same mock data.
+
+        Args:
+            id_motoboy: Motoboy ID (used as seed for determinism)
+
+        Returns:
+            ReservaModel with mock data
+        """
         random.seed(id_motoboy)
 
         now = datetime.now()

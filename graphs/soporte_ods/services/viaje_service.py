@@ -5,6 +5,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 
+from src.agent_server.core.database import db_manager
 from ..models.viaje import ViajeModel
 from ..config.mode_config import get_mode_config
 
@@ -59,20 +60,40 @@ class ViajeService:
 
         # MODE 1 & 2: Query database
         try:
-            # TODO: Implement database query
-            logger.warning(
-                f"Database query not yet implemented for mode {mode}. "
-                f"Using mock data temporarily."
-            )
+            db_url = mode_config.get("db_url")
+
+            if not db_url:
+                logger.error(f"db_url not configured for mode {mode}")
+                return {
+                    "success": False,
+                    "data": None,
+                    "error": "Database URL not configured",
+                    "message": f"Database URL no está configurada para mode {mode}"
+                }
+
+            # Execute stored procedure to get active viaje info
+            result = await ViajeService._execute_db_query_by_motoboy(db_url, id_motoboy)
+
+            if not result:
+                return {
+                    "success": False,
+                    "data": None,
+                    "error": "Viaje no encontrado",
+                    "message": f"No se encontró viaje activo para motoboy {id_motoboy}"
+                }
+
+            # Map database result to ViajeModel
+            viaje = ViajeService._map_result_to_viaje(result)
+
             return {
                 "success": True,
-                "data": ViajeService._generate_mock_viaje(id_motoboy),
+                "data": viaje,
                 "error": None,
-                "message": "Viaje encontrado (temporary mock - DB implementation pending)"
+                "message": "Viaje activo encontrado correctamente"
             }
 
         except Exception as e:
-            logger.error(f"Error obteniendo viaje para motoboy {id_motoboy}: {e}")
+            logger.error(f"Error obteniendo viaje para motoboy {id_motoboy}: {e}", exc_info=True)
             return {
                 "success": False,
                 "data": None,
@@ -129,20 +150,40 @@ class ViajeService:
 
         # MODE 1 & 2: Query database
         try:
-            # TODO: Implement database query
-            logger.warning(
-                f"Database query not yet implemented for mode {mode}. "
-                f"Using mock data temporarily."
-            )
+            db_url = mode_config.get("db_url")
+
+            if not db_url:
+                logger.error(f"db_url not configured for mode {mode}")
+                return {
+                    "success": False,
+                    "data": None,
+                    "error": "Database URL not configured",
+                    "message": f"Database URL no está configurada para mode {mode}"
+                }
+
+            # Execute stored procedure to get all viajes for reserva
+            results = await ViajeService._execute_db_query_by_reserva(db_url, id_reserva)
+
+            if not results:
+                return {
+                    "success": False,
+                    "data": None,
+                    "error": "Viajes no encontrados",
+                    "message": f"No se encontraron viajes para reserva {id_reserva}"
+                }
+
+            # Map database results to ViajeModel list
+            viajes = [ViajeService._map_result_to_viaje(result) for result in results]
+
             return {
                 "success": True,
-                "data": [ViajeService._generate_mock_viaje(id_reserva)],
+                "data": viajes,
                 "error": None,
-                "message": "Viajes encontrados (temporary mock - DB implementation pending)"
+                "message": f"Se encontraron {len(viajes)} viajes correctamente"
             }
 
         except Exception as e:
-            logger.error(f"Error obteniendo viajes para reserva {id_reserva}: {e}")
+            logger.error(f"Error obteniendo viajes para reserva {id_reserva}: {e}", exc_info=True)
             return {
                 "success": False,
                 "data": None,
@@ -151,8 +192,100 @@ class ViajeService:
             }
 
     @staticmethod
+    async def _execute_db_query_by_motoboy(db_url: str, id_motoboy: int) -> Optional[Dict[str, Any]]:
+        """Execute database query to get active viaje for a motoboy using DatabaseManager
+
+        Args:
+            db_url: Database connection URL
+            id_motoboy: Motoboy ID to query
+
+        Returns:
+            Dict with viaje data or None if not found
+
+        Raises:
+            Exception: If database query fails
+        """
+        query = "EXEC sp_ChatBotODS_GetViajesActivos_By_IdMotoboy @IdMotoboy = :id_motoboy"
+
+        # DatabaseManager handles engine creation/disposal and error logging automatically
+        return await db_manager.execute_external_query(
+            db_url=db_url,
+            query=query,
+            params={"id_motoboy": id_motoboy}
+        )
+
+    @staticmethod
+    async def _execute_db_query_by_reserva(db_url: str, id_reserva: int) -> List[Dict[str, Any]]:
+        """Execute database query to get all viajes for a reserva using DatabaseManager
+
+        Args:
+            db_url: Database connection URL
+            id_reserva: Reserva ID to query
+
+        Returns:
+            List of dicts with viaje data, empty list if not found
+
+        Raises:
+            Exception: If database query fails
+        """
+        query = "EXEC sp_ChatBotODs_GetViajes_By_IdReserva @IdReserva = :id_reserva"
+
+        # DatabaseManager handles engine creation/disposal and error logging automatically
+        return await db_manager.execute_external_query_all(
+            db_url=db_url,
+            query=query,
+            params={"id_reserva": id_reserva}
+        )
+
+    @staticmethod
+    def _map_result_to_viaje(result: Dict[str, Any]) -> ViajeModel:
+        """Map database result dictionary to ViajeModel
+
+        Args:
+            result: Dictionary with viaje data from database
+
+        Returns:
+            ViajeModel instance
+        """
+        return ViajeModel(
+            id_viaje=result.get("id_viaje"),
+            id_reserva=result.get("id_reserva"),
+            id_motoboy=result.get("id_motoboy"),
+            direccion_origen=result.get("direccion_origen"),
+            direccion_destino=result.get("direccion_destino"),
+            latitud_origen=result.get("latitud_origen"),
+            longitud_origen=result.get("longitud_origen"),
+            latitud_destino=result.get("latitud_destino"),
+            longitud_destino=result.get("longitud_destino"),
+            distancia_pickeo=result.get("distancia_pickeo"),
+            distancia_entrega=result.get("distancia_entrega"),
+            id_estado=result.get("id_estado"),
+            nombre_estado=result.get("nombre_estado"),
+            fecha_asignacion_reserva=result.get("fecha_asignacion_reserva"),
+            fecha_llegada_local=result.get("fecha_llegada_local"),
+            fecha_salida_local=result.get("fecha_salida_local"),
+            fecha_llegada_cliente=result.get("fecha_llegada_cliente"),
+            fecha_entregado=result.get("fecha_entregado"),
+            fecha_llegada_local_estimada=result.get("fecha_llegada_local_estimada"),
+            fecha_salida_local_estimada=result.get("fecha_salida_local_estimada"),
+            fecha_llegada_cliente_estimada=result.get("fecha_llegada_cliente_estimada"),
+            fecha_entregado_estimada=result.get("fecha_entregado_estimada"),
+            message="Viaje encontrado correctamente"
+        )
+
+    @staticmethod
     def _generate_mock_viaje(seed: int) -> ViajeModel:
-        """Generate deterministic mock viaje for testing"""
+        """Generate deterministic mock viaje for testing
+
+        Uses seed as random seed to ensure deterministic results.
+        Same seed will always generate the same mock data.
+
+        Args:
+            seed: Random seed for determinism
+
+        Returns:
+            ViajeModel with mock data
+        """
         random.seed(seed)
 
         now = datetime.now()

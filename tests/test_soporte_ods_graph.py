@@ -17,7 +17,7 @@ def test_graph_compiles():
 
 def test_context_default_values():
     """Test SoporteContext default values"""
-    ctx = SoporteContext()
+    ctx = SoporteContext()  # motoboy_id is now in state, not context
     assert ctx.mode == 1  # Default to production
     assert ctx.model == "openai/gpt-4-turbo"
     assert ctx.temperature == 0.3
@@ -52,8 +52,9 @@ async def test_graph_basic_invocation():
     """Test basic graph invocation with mock data"""
     from langchain_core.messages import HumanMessage
 
-    # Initial state
+    # Initial state - motoboy_id is now passed in the input
     input_state = {
+        "motoboy_id": 12345,  # ← Pass motoboy_id in input
         "messages": [HumanMessage(content="Hola, ¿cómo estás?")]
     }
 
@@ -64,7 +65,6 @@ async def test_graph_basic_invocation():
     config = {
         "configurable": {
             "thread_id": "test_thread_123",
-            "motoboy_id": 12345,
         },
         "context": context,
     }
@@ -75,7 +75,8 @@ async def test_graph_basic_invocation():
         # We're not actually invoking to avoid needing API keys in tests
         # Just verify the structure is correct
         assert callable(graph.ainvoke)
-        assert config["configurable"]["motoboy_id"] == 12345
+        assert input_state["motoboy_id"] == 12345
+        assert context.mode == 3
     except Exception as e:
         # Expected to fail without API keys, but shouldn't be import/structure errors
         assert "api" in str(e).lower() or "key" in str(e).lower()

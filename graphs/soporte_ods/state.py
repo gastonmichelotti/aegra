@@ -16,6 +16,7 @@ class SoporteState:
 
     This state includes:
     - messages: Conversation history (managed by LangGraph)
+    - motoboy_id: ID of the motoboy (set once at initialization)
     - Context data: Pre-computed domain models (motoboy, viaje, reserva, location)
     - Confirmation flow: Pending confirmations for state-changing operations
     - Observer flag: Whether to run long-term memory extraction
@@ -24,6 +25,9 @@ class SoporteState:
 
     # Core conversation messages
     messages: Annotated[Sequence[AnyMessage], add_messages]
+
+    # Motoboy ID - set once at initialization, persisted in checkpoints
+    motoboy_id: Optional[int] = None
 
     # Pre-computed context data - DOMAIN MODEL CLASSES (not dicts)
     # These are fetched once and cached in checkpoints, refreshed periodically

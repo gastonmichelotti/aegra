@@ -34,10 +34,14 @@ async def load_context_node(state: SoporteState, runtime: Runtime[SoporteContext
         Dict with state updates (motoboy, viaje, reserva, location_info, last_context_refresh)
     """
     try:
-        # Get runtime context and config
+        # Get motoboy_id from state (passed once at initialization)
+        motoboy_id = state.motoboy_id
+        if not motoboy_id:
+            logger.error("motoboy_id not found in state")
+            return {}
+
+        # Get runtime context for mode and other settings
         ctx = runtime.context
-        config = runtime.config
-        motoboy_id = config["configurable"]["motoboy_id"]
         mode = ctx.mode
 
         logger.info(f"load_context_node: motoboy_id={motoboy_id}, mode={mode}")

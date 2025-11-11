@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 async def derive_to_human(
     motivo: str,
-    state: InjectedState = None,
+    state: InjectedState,
 ) -> str:
     """Derivar la conversación a soporte humano
 
